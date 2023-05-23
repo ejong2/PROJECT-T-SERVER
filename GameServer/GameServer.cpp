@@ -64,19 +64,23 @@ bool                         G_PROGRAMRUNNING = true;
 
 using namespace std;
 
+// 메인 패킷 처리 함수입니다.
+// 소켓과 버퍼를 받아, 버퍼를 구조화된 메시지로 디코딩하고, 메시지 유형에 따라 메시지를 처리합니다.
 int ProcessPacket(SOCKET clientSocket, char* recvData)
 {
     int retval = 1;
 
-    // Extract the header from the received data
+    // 헤더 추출 및 기본 데이터 초기화
     MessageHeader* msgHeader = reinterpret_cast<MessageHeader*>(recvData);
     std::string sqlQuery;
     sql::PreparedStatement* DB_PSTMT = nullptr;
     sql::ResultSet* DB_RS = nullptr;
     int updatedRows = 0;
 
+    // 메시지 유형에 따른 처리
     switch ((EMessageID)msgHeader->MessageID)
     {
+    // 회원 가입 요청 처리
     case EMessageID::C2S_REQ_SIGNUP:  // Sign up request
     {
         MessageReqSignup reqMsg;
@@ -85,13 +89,13 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
         try
         {
-            // Check if user already exists
+            // 유저가 이미 존재하는지 체크
             sqlQuery = "SELECT 1 FROM User WHERE login_id = ? LIMIT 1";
             DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
             DB_PSTMT->setString(1, reqMsg.USER_ID);
             DB_RS = DB_PSTMT->executeQuery();
 
-            // If user does not exist, insert new user
+            // 유저가 존재하지 않으면, 새 유저를 추가
             if (DB_RS == nullptr || (DB_RS != nullptr && DB_RS->next() == false))
             {
                 sqlQuery = "INSERT INTO User(login_id, password)VALUES(?,?)";
@@ -108,8 +112,8 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
         if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
 
-        // Prepare response message...
-        if (updatedRows > 0)  // If signup was successful
+        // 회원 가입이 성공했을 경우 응답 메시지 준비
+        if (updatedRows > 0)
         {
             MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
@@ -118,17 +122,19 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
 
             retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
         }
-        else  // Signup failed
+        else  // 회원 가입 실패
         {
             MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
             respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
             respMsg.PROCESS_FLAG = 0;  // Failure
 
+            // 메시지 전송
             retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
         }
         break;
     }
+    // 로그인 요청 처리
     case EMessageID::C2S_REQ_LOGIN:  // Login request
     {
         MessageReqLogin reqMsg;
@@ -139,14 +145,14 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
         try
         {
-            // Try to find the user with given ID and password
+            // 주어진 ID와 비밀번호를 가진 사용자를 찾습니다.
             sqlQuery = "SELECT 1 FROM User WHERE login_id = ? AND password = ? LIMIT 1";
             DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
             DB_PSTMT->setString(1, reqMsg.USER_ID);
             DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
             DB_RS = DB_PSTMT->executeQuery();
 
-            // If user exists and password matches, successful login
+            // 사용자가 존재하고 비밀번호가 일치하면 로그인 성공
             if (DB_RS != nullptr && DB_RS->next() == true)
             {
                 loginSuccessful = true;  // 수정
@@ -159,7 +165,7 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
         if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
 
-        // Prepare response message...
+        // 로그인이 성공했다면 응답 메시지를 준비합니다.
         if (loginSuccessful)  // 수정
         {
             MessageResPlayer respMsg;
@@ -169,7 +175,7 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
 
             retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
         }
-        else  // Login failed
+        else  // 로그인 실패
         {
             MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
@@ -180,6 +186,7 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         }
         break;
     }
+    // 유효하지 않은 메시지 형식을 받았을 때
     default:
         std::cout << "[ERR] Invalid Message Format! " << std::endl;
         retval = 1;
