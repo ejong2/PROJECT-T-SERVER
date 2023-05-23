@@ -111,21 +111,21 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         // Prepare response message...
         if (updatedRows > 0)  // If signup was successful
         {
-            MessageResInsertPlayer respMsg;
+            MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
-            respMsg.MsgHead.MessageSize = sizeof(MessageResInsertPlayer);
+            respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
             respMsg.PROCESS_FLAG = 1;  // Success
 
-            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResInsertPlayer), 0);
+            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
         }
         else  // Signup failed
         {
-            MessageResInsertPlayer respMsg;
+            MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
-            respMsg.MsgHead.MessageSize = sizeof(MessageResInsertPlayer);
+            respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
             respMsg.PROCESS_FLAG = 0;  // Failure
 
-            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResInsertPlayer), 0);
+            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
         }
         break;
     }
@@ -160,21 +160,21 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         // Prepare response message...
         if (DB_RS != nullptr)  // If login was successful
         {
-            MessageResInsertPlayer respMsg;
+            MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
-            respMsg.MsgHead.MessageSize = sizeof(MessageResInsertPlayer);
+            respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
             respMsg.PROCESS_FLAG = 1;  // Success
 
-            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResInsertPlayer), 0);
+            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
         }
         else  // Login failed
         {
-            MessageResInsertPlayer respMsg;
+            MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
-            respMsg.MsgHead.MessageSize = sizeof(MessageResInsertPlayer);
+            respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
             respMsg.PROCESS_FLAG = 0;  // Failure
 
-            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResInsertPlayer), 0);
+            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
         }
         break;
     }

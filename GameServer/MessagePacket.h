@@ -30,7 +30,7 @@ struct MessageHeader
     int ReceiverSocketID;
 };
 
-struct MessageResInsertPlayer
+struct MessageResPlayer
 {
     MessageHeader MsgHead;
     int PROCESS_FLAG;
