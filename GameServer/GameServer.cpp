@@ -1,16 +1,19 @@
+#define _RUN_AS_LOCALHOST
 
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 //--C Header------------------------------------------------------------------
 #include <WinSock2.h> 
+#include <mswsock.h>
+#include <ws2tcpip.h>
 #include <Windows.h>
-#include <process.h>
-#include <thread>
 //--C++ Header----------------------------------------------------------------
 #include <iostream>
 #include <vector>
 #include <map>
 #include <memory>
 #include <string>
+#include <thread>
+#include <mutex>
 //--Custom Header-------------------------------------------------------------
 #include "StringHelper.h"
 #include "MessagePacket.h"
@@ -35,10 +38,10 @@ const char* NET_SERVER_IPV4 = "192.168.0.10";
 const int                    NET_SERVER_PORT = 5001;
 const int                    NET_PACKET_SIZE = 512;
 std::map<SOCKET, ClientData> CLIENT_POOL;
-CRITICAL_SECTION             CS_NETWORK_HANDLER;
+std::mutex                   MUTEX_NETWORK_HANDLER;
 //--Thread--------------------------------------------------------------------       
-std::map<SOCKET, HANDLE>     THREAD_POOL;
-CRITICAL_SECTION             CS_THREAD_HANDLER;
+std::map<SOCKET, std::thread> THREAD_POOL;
+std::mutex                    MUTEX_THREAD_HANDLER;
 //--DBMS----------------------------------------------------------------------
 #ifdef _RUN_AS_LOCALHOST
 const std::string            DB_SERVERNAME = "tcp://127.0.0.1:3306";
@@ -55,7 +58,7 @@ sql::Connection* DB_CONN = nullptr;
 sql::Statement* DB_STMT = nullptr;
 sql::PreparedStatement* DB_PSTMT = nullptr;
 sql::ResultSet* DB_RS = nullptr;
-CRITICAL_SECTION             CS_DB_HANDLER;
+std::mutex                   MUTEX_DB_HANDLER;
 //--MainProgram---------------------------------------------------------------
 bool                         G_PROGRAMRUNNING = true;
 
@@ -64,10 +67,6 @@ using namespace std;
 int main()
 {
     cout << "myProject Server v2023-05-22" << endl;
-
-    InitializeCriticalSection(&CS_THREAD_HANDLER);
-    InitializeCriticalSection(&CS_NETWORK_HANDLER);
-    InitializeCriticalSection(&CS_DB_HANDLER);
 
     try
     {
@@ -87,7 +86,6 @@ int main()
         cout << "[ERR] WSAStartup Error Occurred. ErrorCode : " << GetLastError() << endl;
         exit(-1);
     }
-
     NET_SERVERSOCKET = socket(AF_INET, SOCK_STREAM, 0);
     if (NET_SERVERSOCKET == INVALID_SOCKET)
     {
@@ -122,7 +120,7 @@ int main()
             closesocket(ClientSocket);
             continue;
         }
-        EnterCriticalSection(&CS_NETWORK_HANDLER);
+        std::lock_guard<std::mutex> lock(MUTEX_NETWORK_HANDLER);
         CLIENT_POOL[ClientSocket] = ClientData(ClientSocket);
         cout << "[SYS] ClientSocket [" << ClientSocket << "] Connected!" << endl;
 
