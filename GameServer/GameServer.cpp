@@ -64,6 +64,76 @@ bool                         G_PROGRAMRUNNING = true;
 
 using namespace std;
 
+int ProcessPacket(SOCKET clientSocket, char* recvData)
+{
+    // Extract the header from the received data
+    MessageHeader* msgHeader = reinterpret_cast<MessageHeader*>(recvData);
+
+    switch ((EMessageID)msgHeader->MessageID)
+    {
+    case EMessageID::C2S_REQ_SIGNUP:  // Sign up request
+        // Handle sign up request...
+        break;
+    case EMessageID::C2S_REQ_LOGIN:  // Login request
+        // Handle login request...
+        break;
+    default:
+        // Unknown message ID
+        return -1;
+    }
+
+    return 0;
+}
+
+void ThreadProcessClientSocket(SOCKET clientSocket)
+{
+    char recvBuffer[NET_PACKET_SIZE] = { 0, };
+
+    // Message handling loop
+    while (G_PROGRAMRUNNING)
+    {
+        // Receive messages from client
+        int recvLen = recv(clientSocket, recvBuffer, NET_PACKET_SIZE, 0);
+        if (recvLen <= 0)
+        {
+            // Handle disconnect
+            std::lock_guard<std::mutex> lock(MUTEX_NETWORK_HANDLER);
+
+            // Remove the disconnected client from CLIENT_POOL
+            CLIENT_POOL.erase(clientSocket);
+
+            // Prepare a disconnect message packet
+            MessageHeader msgHead = {};
+            msgHead.MessageID = (int)EMessageID::S2C_RES_CLINET_DISCONNET;
+            msgHead.MessageSize = sizeof(MessageHeader);
+            msgHead.SenderSocketID = (int)NET_SERVERSOCKET;
+
+            // Send the disconnect message to all remaining clients
+            for (const auto& client : CLIENT_POOL)
+            {
+                msgHead.ReceiverSocketID = (int)client.first;
+                send(client.first, (char*)&msgHead, msgHead.MessageSize, 0);
+            }
+
+            closesocket(clientSocket);
+            break;
+        }
+
+        // Process the received packet
+        if (ProcessPacket(clientSocket, recvBuffer) < 0)
+        {
+            // Handle packet processing error
+            // ...
+        }
+    }
+
+    // Clean up
+    {
+        std::lock_guard<std::mutex> lock(MUTEX_THREAD_HANDLER);
+        THREAD_POOL.erase(clientSocket);
+    }
+}
+
 int main()
 {
     cout << "myProject Server v2023-05-22" << endl;
@@ -120,10 +190,15 @@ int main()
             closesocket(ClientSocket);
             continue;
         }
-        std::lock_guard<std::mutex> lock(MUTEX_NETWORK_HANDLER);
-        CLIENT_POOL[ClientSocket] = ClientData(ClientSocket);
-        cout << "[SYS] ClientSocket [" << ClientSocket << "] Connected!" << endl;
+        {
+            std::lock_guard<std::mutex> lock(MUTEX_NETWORK_HANDLER);
+            CLIENT_POOL[ClientSocket] = ClientData(ClientSocket);
+            cout << "[SYS] ClientSocket [" << ClientSocket << "] Connected!" << endl;
+        }
 
+        // Create a new thread for each client
+        THREAD_POOL[ClientSocket] = std::thread(ThreadProcessClientSocket, ClientSocket);
+        THREAD_POOL[ClientSocket].detach(); // detach the thread and continue
     }
 
     return 0;
