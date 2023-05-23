@@ -18,6 +18,8 @@
 #include "MessagePacket.h"
 #include "ClientData.h"
 
+using namespace std;
+
 #pragma comment (lib, "ws2_32.lib")
 
 #ifdef _RUN_AS_LOCALHOST
@@ -27,7 +29,7 @@ const char* SERVER_IP_ADDRESS = "192.168.0.10";
 #endif
 const int SERVER_PORT = 5001;
 
-void handleAuthenticationResponse(MessageResInsertPlayer* response)
+void handleAuthenticationResponse(MessageResPlayer* response)
 {
     if (response->PROCESS_FLAG == 1)
     {
@@ -61,15 +63,15 @@ void inputCredentials(MessageReqLogin* request)
     std::cin >> request->USER_PASSWORD;
 }
 
-MessageHeader* createRequestMessage(int choice)
+MessageHeader* createRequestMessage(std::string choice)
 {
-    if (choice == 1) // Signup
+    if (choice == "1") // Signup
     {
         MessageReqSignup* signupRequest = new MessageReqSignup();
         inputCredentials(signupRequest);
         return signupRequest;
     }
-    else if (choice == 2) // Login
+    else if (choice == "2") // Login
     {
         MessageReqLogin* loginRequest = new MessageReqLogin();
         inputCredentials(loginRequest);
@@ -90,7 +92,7 @@ void processResponse(char* buffer)
     {
     case EMessageID::S2C_REQ_SIGNUP:
     case EMessageID::S2C_REQ_LOGIN:
-        handleAuthenticationResponse(reinterpret_cast<MessageResInsertPlayer*>(buffer));
+        handleAuthenticationResponse(reinterpret_cast<MessageResPlayer*>(buffer));
         break;
     case EMessageID::S2C_RES_CLINET_CONNECT:
         std::cout << "Server: Connected successfully!" << std::endl;
@@ -100,10 +102,9 @@ void processResponse(char* buffer)
         break;
     default:
         std::cerr << "Unknown response from server!" << std::endl;
+        break;
     }
 }
-
-
 
 int main()
 {
@@ -148,14 +149,14 @@ int main()
     }
 
     char buffer[1024];
-    int choice;
+    std::string choice;
 
     while (true)
     {
         std::cout << "\n1. Signup\n2. Login\n3. Quit\n";
         std::cin >> choice;
         MessageHeader* requestMessage;
-        if (choice == 1 || choice == 2)
+        if (choice == "1" || choice ==  "2")
         {
             requestMessage = createRequestMessage(choice);
             if (sendRequest(clientSocket, requestMessage) == SOCKET_ERROR)
@@ -163,9 +164,9 @@ int main()
                 std::cerr << "Failed to send request! Error: " << WSAGetLastError() << std::endl;
                 continue;
             }
-            std::cout << (choice == 1 ? "Signup" : "Login") << " request sent!" << std::endl;
+            std::cout << (choice == "1" ? "Signup" : "Login") << " request sent!" << std::endl;
         }
-        else if (choice == 3) // Quit
+        else if (choice == "3") // Quit
         {
             closesocket(clientSocket);
             WSACleanup();

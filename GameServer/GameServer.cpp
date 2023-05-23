@@ -134,6 +134,8 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         MessageReqLogin reqMsg;
         memcpy(&reqMsg, recvData, sizeof(MessageReqLogin));
 
+        bool loginSuccessful = false;  // 추가
+
         std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
         try
         {
@@ -147,7 +149,7 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
             // If user exists and password matches, successful login
             if (DB_RS != nullptr && DB_RS->next() == true)
             {
-                // Login success!
+                loginSuccessful = true;  // 수정
             }
         }
         catch (sql::SQLException ex)
@@ -158,7 +160,7 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
 
         // Prepare response message...
-        if (DB_RS != nullptr)  // If login was successful
+        if (loginSuccessful)  // 수정
         {
             MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
