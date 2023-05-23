@@ -86,7 +86,7 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         try
         {
             // Check if user already exists
-            sqlQuery = "SELECT 1 FROM 유저 WHERE 로그인_아이디 = ? LIMIT 1";
+            sqlQuery = "SELECT 1 FROM User WHERE login_id = ? LIMIT 1";
             DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
             DB_PSTMT->setString(1, reqMsg.USER_ID);
             DB_RS = DB_PSTMT->executeQuery();
@@ -94,7 +94,7 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
             // If user does not exist, insert new user
             if (DB_RS == nullptr || (DB_RS != nullptr && DB_RS->next() == false))
             {
-                sqlQuery = "INSERT INTO 유저(로그인_아이디,비밀번호)VALUES(?,?)";
+                sqlQuery = "INSERT INTO User(login_id, password)VALUES(?,?)";
                 DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
                 DB_PSTMT->setString(1, reqMsg.USER_ID);
                 DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
@@ -138,7 +138,7 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
         try
         {
             // Try to find the user with given ID and password
-            sqlQuery = "SELECT 1 FROM 유저 WHERE 로그인_아이디 = ? AND 비밀번호 = ? LIMIT 1";
+            sqlQuery = "SELECT 1 FROM User WHERE login_id = ? AND password = ? LIMIT 1";
             DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
             DB_PSTMT->setString(1, reqMsg.USER_ID);
             DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
