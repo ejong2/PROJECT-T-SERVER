@@ -69,45 +69,110 @@ int main()
         return -1;
     }
 
-    // Create signup request
-    MessageReqSignup signupRequest;
-    memset(&signupRequest, 0, sizeof(signupRequest));
-    signupRequest.MessageID = static_cast<int>(EMessageID::C2S_REQ_SIGNUP);
-    signupRequest.MessageSize = sizeof(signupRequest);
-    strcpy_s(signupRequest.USER_ID, sizeof(signupRequest.USER_ID), "user1");
-    strcpy_s(signupRequest.USER_PASSWORD, sizeof(signupRequest.USER_PASSWORD), "password1");
+    char buffer[1024];
+    int choice;
 
-    // Send signup request
-    if (send(clientSocket, (char*)&signupRequest, sizeof(signupRequest), 0) == SOCKET_ERROR)
+    while (true)
     {
-        std::cerr << "Failed to send signup request! Error: " << WSAGetLastError() << std::endl;
-    }
-    else
-    {
-        std::cout << "Signup request sent!" << std::endl;
-    }
+        std::cout << "\n1. Signup\n2. Login\n3. Quit\n";
+        std::cin >> choice;
+        switch (choice)
+        {
+        case 1: // Signup
+        {
+            MessageReqSignup signupRequest;
+            memset(&signupRequest, 0, sizeof(signupRequest));
+            signupRequest.MessageID = static_cast<int>(EMessageID::C2S_REQ_SIGNUP);
+            signupRequest.MessageSize = sizeof(signupRequest);
+            std::cout << "Enter UserID: ";
+            std::cin >> signupRequest.USER_ID;
+            std::cout << "Enter Password: ";
+            std::cin >> signupRequest.USER_PASSWORD;
+            if (send(clientSocket, (char*)&signupRequest, sizeof(signupRequest), 0) == SOCKET_ERROR)
+            {
+                std::cerr << "Failed to send signup request! Error: " << WSAGetLastError() << std::endl;
+            }
+            else
+            {
+                std::cout << "Signup request sent!" << std::endl;
+            }
+        }
+        break;
 
-    // Create login request
-    MessageReqLogin loginRequest;
-    memset(&loginRequest, 0, sizeof(loginRequest));
-    loginRequest.MessageID = static_cast<int>(EMessageID::C2S_REQ_LOGIN);
-    loginRequest.MessageSize = sizeof(loginRequest);
-    strcpy_s(loginRequest.USER_ID, sizeof(loginRequest.USER_ID), "user1");
-    strcpy_s(loginRequest.USER_PASSWORD, sizeof(loginRequest.USER_PASSWORD), "password1");
+        case 2: // Login
+        {
+            MessageReqLogin loginRequest;
+            memset(&loginRequest, 0, sizeof(loginRequest));
+            loginRequest.MessageID = static_cast<int>(EMessageID::C2S_REQ_LOGIN);
+            loginRequest.MessageSize = sizeof(loginRequest);
+            std::cout << "Enter UserID: ";
+            std::cin >> loginRequest.USER_ID;
+            std::cout << "Enter Password: ";
+            std::cin >> loginRequest.USER_PASSWORD;
+            if (send(clientSocket, (char*)&loginRequest, sizeof(loginRequest), 0) == SOCKET_ERROR)
+            {
+                std::cerr << "Failed to send login request! Error: " << WSAGetLastError() << std::endl;
+            }
+            else
+            {
+                std::cout << "Login request sent!" << std::endl;
+            }
+        }
+        break;
 
-    // Send login request
-    if (send(clientSocket, (char*)&loginRequest, sizeof(loginRequest), 0) == SOCKET_ERROR)
-    {
-        std::cerr << "Failed to send login request! Error: " << WSAGetLastError() << std::endl;
+        case 3: // Quit
+        {
+            closesocket(clientSocket);
+            WSACleanup();
+            return 0;
+        }
+
+        default:
+            std::cout << "Invalid choice, please try again." << std::endl;
+            continue;
+        }
+
+        memset(buffer, 0, sizeof(buffer));
+        int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+        if (bytesReceived == SOCKET_ERROR)
+        {
+            std::cerr << "Failed to receive response! Error: " << WSAGetLastError() << std::endl;
+            continue;
+        }
+
+        MessageHeader* header = reinterpret_cast<MessageHeader*>(buffer);
+        if (header->MessageID == static_cast<int>(EMessageID::S2C_REQ_SIGNUP))
+        {
+            MessageResInsertPlayer* signupResponse = reinterpret_cast<MessageResInsertPlayer*>(buffer);
+            if (signupResponse->PROCESS_FLAG == 1)
+            {
+                std::cout << "Signup success!" << std::endl;
+            }
+            else
+            {
+                std::cout << "Signup failed. User already exists." << std::endl;
+            }
+        }
+        else if (header->MessageID == static_cast<int>(EMessageID::S2C_REQ_LOGIN))
+        {
+            MessageResInsertPlayer* loginResponse = reinterpret_cast<MessageResInsertPlayer*>(buffer);
+            if (loginResponse->PROCESS_FLAG == 1)
+            {
+                std::cout << "Login success!" << std::endl;
+            }
+            else
+            {
+                std::cout << "Login failed. Incorrect username or password." << std::endl;
+            }
+        }
+        else if (header->MessageID == static_cast<int>(EMessageID::S2C_RES_CLINET_CONNECT))
+        {
+            std::cout << "Server: Connected successfully!" << std::endl;
+        }
+        else if (header->MessageID == static_cast<int>(EMessageID::S2C_RES_CLINET_DISCONNET))
+        {
+            std::cout << "Server: Disconnected successfully!" << std::endl;
+        }
     }
-    else
-    {
-        std::cout << "Login request sent!" << std::endl;
-    }
-
-    // Cleanup and close connections
-    closesocket(clientSocket);
-    WSACleanup();
-
-    return 0;
 }
+
