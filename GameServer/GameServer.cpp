@@ -66,23 +66,125 @@ using namespace std;
 
 int ProcessPacket(SOCKET clientSocket, char* recvData)
 {
+    int retval = 1;
+
     // Extract the header from the received data
     MessageHeader* msgHeader = reinterpret_cast<MessageHeader*>(recvData);
+    std::string sqlQuery;
+    sql::PreparedStatement* DB_PSTMT = nullptr;
+    sql::ResultSet* DB_RS = nullptr;
+    int updatedRows = 0;
 
     switch ((EMessageID)msgHeader->MessageID)
     {
     case EMessageID::C2S_REQ_SIGNUP:  // Sign up request
-        // Handle sign up request...
+    {
+        MessageReqSignup reqMsg;
+        memcpy(&reqMsg, recvData, sizeof(MessageReqSignup));
+
+        std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
+        try
+        {
+            // Check if user already exists
+            sqlQuery = "SELECT 1 FROM 유저 WHERE 로그인_아이디 = ? LIMIT 1";
+            DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
+            DB_PSTMT->setString(1, reqMsg.USER_ID);
+            DB_RS = DB_PSTMT->executeQuery();
+
+            // If user does not exist, insert new user
+            if (DB_RS == nullptr || (DB_RS != nullptr && DB_RS->next() == false))
+            {
+                sqlQuery = "INSERT INTO 유저(로그인_아이디,비밀번호)VALUES(?,?)";
+                DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
+                DB_PSTMT->setString(1, reqMsg.USER_ID);
+                DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
+                updatedRows += DB_PSTMT->executeUpdate();
+            }
+        }
+        catch (sql::SQLException ex)
+        {
+            std::cout << "[ERR] SQL Error On C2S_REQ_SIGNUP. ErrorMsg : " << ex.what() << std::endl;
+        }
+        if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
+        if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
+
+        // Prepare response message...
+        if (updatedRows > 0)  // If signup was successful
+        {
+            MessageResInsertPlayer respMsg;
+            respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
+            respMsg.MsgHead.MessageSize = sizeof(MessageResInsertPlayer);
+            respMsg.PROCESS_FLAG = 1;  // Success
+
+            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResInsertPlayer), 0);
+        }
+        else  // Signup failed
+        {
+            MessageResInsertPlayer respMsg;
+            respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
+            respMsg.MsgHead.MessageSize = sizeof(MessageResInsertPlayer);
+            respMsg.PROCESS_FLAG = 0;  // Failure
+
+            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResInsertPlayer), 0);
+        }
         break;
+    }
     case EMessageID::C2S_REQ_LOGIN:  // Login request
-        // Handle login request...
+    {
+        MessageReqLogin reqMsg;
+        memcpy(&reqMsg, recvData, sizeof(MessageReqLogin));
+
+        std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
+        try
+        {
+            // Try to find the user with given ID and password
+            sqlQuery = "SELECT 1 FROM 유저 WHERE 로그인_아이디 = ? AND 비밀번호 = ? LIMIT 1";
+            DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
+            DB_PSTMT->setString(1, reqMsg.USER_ID);
+            DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
+            DB_RS = DB_PSTMT->executeQuery();
+
+            // If user exists and password matches, successful login
+            if (DB_RS != nullptr && DB_RS->next() == true)
+            {
+                // Login success!
+            }
+        }
+        catch (sql::SQLException ex)
+        {
+            std::cout << "[ERR] SQL Error On C2S_REQ_LOGIN. ErrorMsg : " << ex.what() << std::endl;
+        }
+        if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
+        if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
+
+        // Prepare response message...
+        if (DB_RS != nullptr)  // If login was successful
+        {
+            MessageResInsertPlayer respMsg;
+            respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
+            respMsg.MsgHead.MessageSize = sizeof(MessageResInsertPlayer);
+            respMsg.PROCESS_FLAG = 1;  // Success
+
+            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResInsertPlayer), 0);
+        }
+        else  // Login failed
+        {
+            MessageResInsertPlayer respMsg;
+            respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
+            respMsg.MsgHead.MessageSize = sizeof(MessageResInsertPlayer);
+            respMsg.PROCESS_FLAG = 0;  // Failure
+
+            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResInsertPlayer), 0);
+        }
         break;
+    }
     default:
-        // Unknown message ID
-        return -1;
+        std::cout << "[ERR] Invalid Message Format! " << std::endl;
+        retval = 1;
+        break;
     }
 
-    return 0;
+    return retval;
 }
 
 void ThreadProcessClientSocket(SOCKET clientSocket)
