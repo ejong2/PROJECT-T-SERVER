@@ -210,6 +210,8 @@ void ThreadProcessClientSocket(SOCKET clientSocket)
             // Handle disconnect
             std::lock_guard<std::mutex> lock(MUTEX_NETWORK_HANDLER);
 
+            std::cout << "[SYS] ClientSocket [" << clientSocket << "] Disconnected!" << std::endl;
+
             // Remove the disconnected client from CLIENT_POOL
             CLIENT_POOL.erase(clientSocket);
 
