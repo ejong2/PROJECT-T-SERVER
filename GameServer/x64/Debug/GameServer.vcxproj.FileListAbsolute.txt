@@ -1,2 +1,3 @@
 C:\work\GameServer\x64\Debug\GameServer.exe
 C:\work\PROJECT-T\GameServer\x64\Debug\GameServer.exe
+C:\work\PROJECT-T\PROJECT-T-SERVER\GameServer\x64\Debug\GameServer.exe

@@ -1,4 +1,4 @@
-#define _RUN_AS_LOCALHOST
+//#define _RUN_AS_LOCALHOST
 
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 //--C Header------------------------------------------------------------------
@@ -52,7 +52,7 @@ const std::string            DB_SERVERNAME = "tcp://127.0.0.1:3306";
 const std::string            DB_USERNAME = "root";
 const std::string            DB_PASSWORD = "1234";
 #endif 
-const std::string            DB_DBNAME = "MYPROJECT";
+const std::string            DB_DBNAME = "PROJECT_T";
 sql::Driver* DB_DRIVER = nullptr;
 sql::Connection* DB_CONN = nullptr;
 sql::Statement* DB_STMT = nullptr;
@@ -77,14 +77,22 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
     sql::ResultSet* DB_RS = nullptr;
     int updatedRows = 0;
 
+    char buffer[1024];
+    memcpy(buffer, 0, sizeof(buffer));
+
     // 메시지 유형에 따른 처리
     switch ((EMessageID)msgHeader->MessageID)
     {
     // 회원 가입 요청 처리
     case EMessageID::C2S_REQ_SIGNUP:  // Sign up request
     {
+        std::cout << "[LOG] C2S_REQ_SIGNUP" << std::endl;
+
         MessageReqSignup reqMsg;
         memcpy(&reqMsg, recvData, sizeof(MessageReqSignup));
+
+        cout << "요청 회원가입 아이디 : " <<reqMsg.USER_ID << endl;
+        cout << "요청 회원가입 비밀번호 : " <<reqMsg.USER_PASSWORD << endl;
 
         std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
         try
@@ -137,8 +145,13 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
     // 로그인 요청 처리
     case EMessageID::C2S_REQ_LOGIN:  // Login request
     {
+        std::cout << "[LOG] C2S_REQ_LOGIN" << std::endl;
+
         MessageReqLogin reqMsg;
         memcpy(&reqMsg, recvData, sizeof(MessageReqLogin));
+
+        cout << "요청 로그인 아이디 : " << reqMsg.USER_ID << endl;
+        cout << "요청 로그인 비밀번호 : " << reqMsg.USER_PASSWORD << endl;
 
         bool loginSuccessful = false;  // 추가
 
@@ -249,7 +262,7 @@ void ThreadProcessClientSocket(SOCKET clientSocket)
 
 int main()
 {
-    cout << "myProject Server v2023-05-22" << endl;
+    cout << "PROJECT-T Server v2023-05-31" << endl;
 
     try
     {
@@ -262,6 +275,22 @@ int main()
     {
         cout << "[ERR] DB_CONNection Error Occurred. ErrorMsg : " << e.what() << endl;
         exit(-11);
+    }
+
+    // Create the table if not exists
+    std::string create_table_query = "CREATE TABLE IF NOT EXISTS User ("
+        "id INT AUTO_INCREMENT PRIMARY KEY, "
+        "login_id VARCHAR(50) NOT NULL, "
+        "password VARCHAR(50) NOT NULL)";
+    try
+    {
+        DB_STMT = DB_CONN->createStatement();
+        DB_STMT->execute(create_table_query);
+    }
+    catch (sql::SQLException& e)
+    {
+        cout << "[ERR] Table Creation Error Occurred. ErrorMsg : " << e.what() << endl;
+        exit(-12);
     }
 
     if (WSAStartup(MAKEWORD(2, 2), &NET_WSADATA) != 0)
