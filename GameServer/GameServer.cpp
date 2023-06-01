@@ -64,197 +64,13 @@ bool                         G_PROGRAMRUNNING = true;
 
 using namespace std;
 
-// 메인 패킷 처리 함수입니다.
-// 소켓과 버퍼를 받아, 버퍼를 구조화된 메시지로 디코딩하고, 메시지 유형에 따라 메시지를 처리합니다.
-int ProcessPacket(SOCKET clientSocket, char* recvData)
-{
-    int retval = 1;
-
-    // 헤더 추출 및 기본 데이터 초기화
-    MessageHeader* msgHeader = reinterpret_cast<MessageHeader*>(recvData);
-    std::string sqlQuery;
-    sql::PreparedStatement* DB_PSTMT = nullptr;
-    sql::ResultSet* DB_RS = nullptr;
-    int updatedRows = 0;
-
-    // 메시지 유형에 따른 처리
-    switch ((EMessageID)msgHeader->MessageID)
-    {
-        // 회원 가입 요청 처리
-        case EMessageID::C2S_REQ_SIGNUP:  // Sign up request
-        {
-            std::cout << "[LOG] C2S_REQ_SIGNUP" << std::endl;
-
-            MessageReqSignup reqMsg;
-            memcpy(&reqMsg, recvData, sizeof(MessageReqSignup));
-
-            cout << "요청 회원가입 아이디 : " << reqMsg.USER_ID << endl;
-            cout << "요청 회원가입 비밀번호 : " << reqMsg.USER_PASSWORD << endl;
-
-            std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
-            try
-            {
-                // 유저가 이미 존재하는지 체크
-                sqlQuery = "SELECT 1 FROM User WHERE login_id = ? LIMIT 1";
-                DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
-                DB_PSTMT->setString(1, reqMsg.USER_ID);
-                DB_RS = DB_PSTMT->executeQuery();
-
-                // 유저가 존재하지 않으면, 새 유저를 추가
-                if (DB_RS == nullptr || (DB_RS != nullptr && DB_RS->next() == false))
-                {
-                    sqlQuery = "INSERT INTO User(login_id, password)VALUES(?,?)";
-                    DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
-                    DB_PSTMT->setString(1, reqMsg.USER_ID);
-                    DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
-                    updatedRows += DB_PSTMT->executeUpdate();
-                }
-            }
-            catch (sql::SQLException ex)
-            {
-                std::cout << "[ERR] SQL Error On C2S_REQ_SIGNUP. ErrorMsg : " << ex.what() << std::endl;
-            }
-            if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
-            if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
-
-            // 회원 가입이 성공했을 경우 응답 메시지 준비
-            MessageResPlayer respMsg;
-            respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
-            respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
-
-            if (updatedRows > 0)
-            {
-                respMsg.PROCESS_FLAG = (int)EProcessFlag::PROCESS_OK;  // Success
-                respMsg.ERROR_CODE = ErrorCode::NONE;  // No error
-            }
-            else  // 회원 가입 실패
-            {
-                respMsg.PROCESS_FLAG = (int)EProcessFlag::PROCESS_FAIL;  // Failure
-                respMsg.ERROR_CODE = ErrorCode::SIGNUP_DUPLICATE_USERID;  // Duplicate ID error
-            }
-
-            // 메시지 전송
-            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
-
-            break;
-        }
-
-        // 로그인 요청 처리
-        case EMessageID::C2S_REQ_LOGIN:  // Login request
-        {
-            std::cout << "[LOG] C2S_REQ_LOGIN" << std::endl;
-
-            MessageReqLogin reqMsg;
-            memcpy(&reqMsg, recvData, sizeof(MessageReqLogin));
-
-            cout << "요청 로그인 아이디 : " << reqMsg.USER_ID << endl;
-            cout << "요청 로그인 비밀번호 : " << reqMsg.USER_PASSWORD << endl;
-
-            bool loginSuccessful = false;  // 추가
-
-            std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
-            try
-            {
-                // 주어진 ID와 비밀번호를 가진 사용자를 찾습니다.
-                sqlQuery = "SELECT 1 FROM User WHERE login_id = ? AND password = ? LIMIT 1";
-                DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
-                DB_PSTMT->setString(1, reqMsg.USER_ID);
-                DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
-                DB_RS = DB_PSTMT->executeQuery();
-
-                // 사용자가 존재하고 비밀번호가 일치하면 로그인 성공
-                if (DB_RS != nullptr && DB_RS->next() == true)
-                {
-                    loginSuccessful = true;  // 수정
-                }
-            }
-            catch (sql::SQLException ex)
-            {
-                std::cout << "[ERR] SQL Error On C2S_REQ_LOGIN. ErrorMsg : " << ex.what() << std::endl;
-            }
-            if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
-            if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
-
-            // 로그인이 성공했다면 응답 메시지를 준비합니다.
-            MessageResPlayer respMsg;
-            respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
-            respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
-
-            if (loginSuccessful)  // 수정
-            {
-                respMsg.PROCESS_FLAG = (int)EProcessFlag::PROCESS_OK;  // Success
-                respMsg.ERROR_CODE = ErrorCode::NONE;  // No error
-            }
-            else  // 로그인 실패
-            {
-                respMsg.PROCESS_FLAG = (int)EProcessFlag::PROCESS_FAIL;  // Failure
-                respMsg.ERROR_CODE = ErrorCode::LOGIN_FAIL;  // Login fail error
-            }
-
-            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
-
-            break;
-        }
-    // 유효하지 않은 메시지 형식을 받았을 때
-    default:
-        std::cout << "[ERR] Invalid Message Format! " << std::endl;
-        retval = 1;
-        break;
-    }
-
-    return retval;
-}
-
-void ThreadProcessClientSocket(SOCKET clientSocket)
-{
-    char recvBuffer[NET_PACKET_SIZE] = { 0, };
-
-    // Message handling loop
-    while (G_PROGRAMRUNNING)
-    {
-        // Receive messages from client
-        int recvLen = recv(clientSocket, recvBuffer, NET_PACKET_SIZE, 0);
-        if (recvLen <= 0)
-        {
-            // Handle disconnect
-            std::lock_guard<std::mutex> lock(MUTEX_NETWORK_HANDLER);
-
-            std::cout << "[SYS] ClientSocket [" << clientSocket << "] Disconnected!" << std::endl;
-
-            // Remove the disconnected client from CLIENT_POOL
-            CLIENT_POOL.erase(clientSocket);
-
-            // Prepare a disconnect message packet
-            MessageHeader msgHead = {};
-            msgHead.MessageID = (int)EMessageID::S2C_RES_CLINET_DISCONNET;
-            msgHead.MessageSize = sizeof(MessageHeader);
-            msgHead.SenderSocketID = (int)NET_SERVERSOCKET;
-
-            // Send the disconnect message to all remaining clients
-            for (const auto& client : CLIENT_POOL)
-            {
-                msgHead.ReceiverSocketID = (int)client.first;
-                send(client.first, (char*)&msgHead, msgHead.MessageSize, 0);
-            }
-
-            closesocket(clientSocket);
-            break;
-        }
-
-        // Process the received packet
-        if (ProcessPacket(clientSocket, recvBuffer) < 0)
-        {
-            // Handle packet processing error
-            // ...
-        }
-    }
-
-    // Clean up
-    {
-        std::lock_guard<std::mutex> lock(MUTEX_THREAD_HANDLER);
-        THREAD_POOL.erase(clientSocket);
-    }
-}
+// 메서드 전방 선언
+sql::ResultSet* ExecuteQuery(const std::string& sqlQuery, const std::vector<std::string>& params);
+int ExecuteUpdate(const std::string& sqlQuery, const std::vector<std::string>& params);
+bool HandleSignupRequest(char* recvData, SOCKET clientSocket);
+bool HandleLoginRequest(char* recvData, SOCKET clientSocket);
+int ProcessPacket(SOCKET clientSocket, char* recvData);
+void ThreadProcessClientSocket(SOCKET clientSocket);
 
 int main()
 {
@@ -340,4 +156,207 @@ int main()
     }
 
     return 0;
+}
+
+// 이 함수는 주어진 SQL 쿼리와 매개 변수를 사용하여 데이터베이스 쿼리를 실행합니다.
+// 이 쿼리는 결과 세트를 반환할 것으로 예상되며, 이는 SELECT 문에서 주로 사용됩니다.
+sql::ResultSet* ExecuteQuery(const std::string& sqlQuery, const std::vector<std::string>& params)
+{
+    std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
+    sql::PreparedStatement* DB_PSTMT = nullptr;
+    sql::ResultSet* DB_RS = nullptr;
+
+    try
+    {
+        DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
+        for (size_t i = 0; i < params.size(); ++i)
+        {
+            DB_PSTMT->setString(i + 1, params[i]);
+        }
+        DB_RS = DB_PSTMT->executeQuery();
+    }
+    catch (sql::SQLException& ex)
+    {
+        std::cout << "[ERR] SQL Error. ErrorMsg : " << ex.what() << std::endl;
+    }
+
+    return DB_RS;
+}
+
+// 이 함수는 주어진 SQL 쿼리와 매개 변수를 사용하여 데이터베이스 업데이트를 실행합니다.
+// 이 쿼리는 변화된 행의 수를 반환하며, 이는 INSERT, UPDATE, DELETE 문에서 주로 사용됩니다.
+int ExecuteUpdate(const std::string& sqlQuery, const std::vector<std::string>& params)
+{
+    std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
+    sql::PreparedStatement* DB_PSTMT = nullptr;
+    int updatedRows = 0;
+
+    try
+    {
+        DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
+        for (size_t i = 0; i < params.size(); ++i)
+        {
+            DB_PSTMT->setString(i + 1, params[i]);
+        }
+        updatedRows = DB_PSTMT->executeUpdate();
+    }
+    catch (sql::SQLException& ex)
+    {
+        std::cout << "[ERR] SQL Error. ErrorMsg : " << ex.what() << std::endl;
+    }
+
+    return updatedRows;
+}
+
+// 이 함수는 서버에서 클라이언트로 메시지를 전송하는 기능을 담당합니다.
+// 응답 메시지에는 메시지 ID, 처리 상태 및 오류 코드가 포함됩니다.
+void SendResponse(SOCKET clientSocket, EMessageID messageId, EProcessFlag processFlag, ErrorCode errorCode)
+{
+    MessageResPlayer respMsg;
+    respMsg.MsgHead.MessageID = (int)messageId;
+    respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
+    respMsg.PROCESS_FLAG = (int)processFlag;
+    respMsg.ERROR_CODE = errorCode;
+    send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
+}
+
+// 이 함수는 회원 가입 요청을 처리하는 기능을 담당합니다.
+// 받은 데이터를 분석하여 회원 가입 정보를 데이터베이스에 저장합니다.
+bool HandleSignupRequest(char* recvData, SOCKET clientSocket)
+{
+    MessageReqSignup reqMsg;
+    memcpy(&reqMsg, recvData, sizeof(MessageReqSignup));
+
+    std::string sqlQuery = "SELECT 1 FROM User WHERE login_id = ? LIMIT 1";
+    sql::ResultSet* DB_RS = ExecuteQuery(sqlQuery, { reqMsg.USER_ID });
+
+    if (DB_RS != nullptr && DB_RS->next() == false)
+    {
+        sqlQuery = "INSERT INTO User(login_id, password) VALUES (?, ?)";
+        int updatedRows = ExecuteUpdate(sqlQuery, { reqMsg.USER_ID, reqMsg.USER_PASSWORD });
+        if (updatedRows > 0)
+        {
+            SendResponse(clientSocket, EMessageID::S2C_REQ_SIGNUP, EProcessFlag::PROCESS_OK, ErrorCode::NONE);
+
+            return true;
+        }
+    }
+
+    SendResponse(clientSocket, EMessageID::S2C_REQ_SIGNUP, EProcessFlag::PROCESS_FAIL, ErrorCode::SIGNUP_DUPLICATE_USERID);
+    return false;
+}
+
+// 이 함수는 로그인 요청을 처리하는 기능을 담당합니다.
+// 받은 데이터를 분석하여 데이터베이스에 저장된 사용자 정보와 비교합니다.
+bool HandleLoginRequest(char* recvData, SOCKET clientSocket)
+{
+    MessageReqLogin reqMsg;
+    memcpy(&reqMsg, recvData, sizeof(MessageReqLogin));
+
+    std::string sqlQuery = "SELECT 1 FROM User WHERE login_id = ? AND password = ? LIMIT 1";
+    sql::ResultSet* DB_RS = ExecuteQuery(sqlQuery, { reqMsg.USER_ID, reqMsg.USER_PASSWORD });
+
+    if (DB_RS != nullptr && DB_RS->next() == true)
+    {
+        SendResponse(clientSocket, EMessageID::S2C_REQ_LOGIN, EProcessFlag::PROCESS_OK, ErrorCode::NONE);
+        return true;
+    }
+
+    SendResponse(clientSocket, EMessageID::S2C_REQ_LOGIN, EProcessFlag::PROCESS_FAIL, ErrorCode::LOGIN_FAIL);
+    return false;
+}
+
+// 메인 패킷 처리 함수입니다.
+// 소켓과 버퍼를 받아, 버퍼를 구조화된 메시지로 디코딩하고, 메시지 유형에 따라 메시지를 처리합니다.
+int ProcessPacket(SOCKET clientSocket, char* recvData)
+{
+    int retval = 1;
+
+    MessageHeader* msgHeader = reinterpret_cast<MessageHeader*>(recvData);
+
+    switch ((EMessageID)msgHeader->MessageID)
+    {
+        case EMessageID::C2S_REQ_SIGNUP:
+
+            std::cout << "----------------------------------------\n";
+            std::cout << "[TYPE] C2S_REQ_SIGNUP" << std::endl;
+
+            std::cout << "USER_ID : " << reinterpret_cast<MessageReqSignup*>(recvData)->USER_ID << std::endl;
+            std::cout << "USER_PASSWORD : " << reinterpret_cast<MessageReqSignup*>(recvData)->USER_PASSWORD << std::endl;
+            std::cout << "----------------------------------------\n";
+
+            retval += HandleSignupRequest(recvData, clientSocket);
+            break;
+
+        case EMessageID::C2S_REQ_LOGIN:
+            std::cout << "----------------------------------------\n";
+            std::cout << "[TYPE] C2S_REQ_LOGIN" << std::endl;
+
+            std::cout << "USER_ID : " << reinterpret_cast<MessageReqLogin*>(recvData)->USER_ID << std::endl;
+            std::cout << "USER_PASSWORD : " << reinterpret_cast<MessageReqLogin*>(recvData)->USER_PASSWORD << std::endl;
+            std::cout << "----------------------------------------\n";
+
+            retval += HandleLoginRequest(recvData, clientSocket);
+            break;
+
+        default:
+            std::cout << "[ERR] Invalid Message Format! " << std::endl;
+            retval = 1;
+            break;
+    }
+
+    return retval;
+}
+
+// 이 함수는 각 클라이언트 소켓에 대한 별도의 스레드에서 실행됩니다.
+// 클라이언트로부터 메시지를 수신하고, 해당 메시지를 처리하며, 필요에 따라 클라이언트와의 연결을 종료합니다.
+void ThreadProcessClientSocket(SOCKET clientSocket)
+{
+    char recvBuffer[NET_PACKET_SIZE] = { 0, };
+
+    // Message handling loop
+    while (G_PROGRAMRUNNING)
+    {
+        // Receive messages from client
+        int recvLen = recv(clientSocket, recvBuffer, NET_PACKET_SIZE, 0);
+        if (recvLen <= 0)
+        {
+            // Handle disconnect
+            std::lock_guard<std::mutex> lock(MUTEX_NETWORK_HANDLER);
+
+            std::cout << "[SYS] ClientSocket [" << clientSocket << "] Disconnected!" << std::endl;
+
+            // Remove the disconnected client from CLIENT_POOL
+            CLIENT_POOL.erase(clientSocket);
+
+            // Prepare a disconnect message packet
+            MessageHeader msgHead = {};
+            msgHead.MessageID = (int)EMessageID::S2C_RES_CLINET_DISCONNET;
+            msgHead.MessageSize = sizeof(MessageHeader);
+            msgHead.SenderSocketID = (int)NET_SERVERSOCKET;
+
+            // Send the disconnect message to all remaining clients
+            for (const auto& client : CLIENT_POOL)
+            {
+                msgHead.ReceiverSocketID = (int)client.first;
+                send(client.first, (char*)&msgHead, msgHead.MessageSize, 0);
+            }
+
+            closesocket(clientSocket);
+            break;
+        }
+
+        // Process the received packet
+        if (ProcessPacket(clientSocket, recvBuffer) < 0)
+        {
+            // Handle packet processing error
+            // ...
+        }
+    }
+
+    // Clean up
+    {
+        std::lock_guard<std::mutex> lock(MUTEX_THREAD_HANDLER);
+        THREAD_POOL.erase(clientSocket);
+    }
 }

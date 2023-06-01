@@ -15,16 +15,16 @@ enum class EMessageID : int
 
 enum class EProcessFlag : int
 {
-    UNDEFINED = 0,  //미정의
-    PROCESS_OK = 1,  //처리완료
-    PROCESS_FAIL = 2   //처리실패
+    UNDEFINED                   = 0,        //미정의
+    PROCESS_OK                  = 1,        //처리완료
+    PROCESS_FAIL                = 2         //처리실패
 };
 
 enum class ErrorCode : int
 {
-    NONE = 0,                         //오류 없음
-    SIGNUP_DUPLICATE_USERID = 1,      //중복된 아이디로 회원가입 시도
-    LOGIN_FAIL = 2,                   //로그인 실패
+    NONE                        = 0,        //오류 없음
+    SIGNUP_DUPLICATE_USERID     = 1,        //회원가입 실패 
+    LOGIN_FAIL                  = 2,        //로그인 실패
 };
 
 #pragma pack(push,1)
@@ -55,6 +55,5 @@ struct MessageReqLogin : public MessageHeader
     char USER_ID[32];
     char USER_PASSWORD[32];
 };
-
 
 #pragma pack(pop)
