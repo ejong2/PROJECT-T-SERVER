@@ -20,6 +20,13 @@ enum class EProcessFlag : int
     PROCESS_FAIL = 2   //처리실패
 };
 
+enum class ErrorCode : int
+{
+    NONE = 0,                         //오류 없음
+    SIGNUP_DUPLICATE_USERID = 1,      //중복된 아이디로 회원가입 시도
+    LOGIN_FAIL = 2,                   //로그인 실패
+};
+
 #pragma pack(push,1)
 
 struct MessageHeader
@@ -34,6 +41,7 @@ struct MessageResPlayer
 {
     MessageHeader MsgHead;
     int PROCESS_FLAG;
+    ErrorCode ERROR_CODE;     // 오류 코드
 };
 
 struct MessageReqSignup : public MessageHeader

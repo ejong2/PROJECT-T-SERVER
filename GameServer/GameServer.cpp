@@ -77,128 +77,124 @@ int ProcessPacket(SOCKET clientSocket, char* recvData)
     sql::ResultSet* DB_RS = nullptr;
     int updatedRows = 0;
 
-    char buffer[1024];
-    memcpy(buffer, 0, sizeof(buffer));
-
     // 메시지 유형에 따른 처리
     switch ((EMessageID)msgHeader->MessageID)
     {
-    // 회원 가입 요청 처리
-    case EMessageID::C2S_REQ_SIGNUP:  // Sign up request
-    {
-        std::cout << "[LOG] C2S_REQ_SIGNUP" << std::endl;
-
-        MessageReqSignup reqMsg;
-        memcpy(&reqMsg, recvData, sizeof(MessageReqSignup));
-
-        cout << "요청 회원가입 아이디 : " <<reqMsg.USER_ID << endl;
-        cout << "요청 회원가입 비밀번호 : " <<reqMsg.USER_PASSWORD << endl;
-
-        std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
-        try
+        // 회원 가입 요청 처리
+        case EMessageID::C2S_REQ_SIGNUP:  // Sign up request
         {
-            // 유저가 이미 존재하는지 체크
-            sqlQuery = "SELECT 1 FROM User WHERE login_id = ? LIMIT 1";
-            DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
-            DB_PSTMT->setString(1, reqMsg.USER_ID);
-            DB_RS = DB_PSTMT->executeQuery();
+            std::cout << "[LOG] C2S_REQ_SIGNUP" << std::endl;
 
-            // 유저가 존재하지 않으면, 새 유저를 추가
-            if (DB_RS == nullptr || (DB_RS != nullptr && DB_RS->next() == false))
+            MessageReqSignup reqMsg;
+            memcpy(&reqMsg, recvData, sizeof(MessageReqSignup));
+
+            cout << "요청 회원가입 아이디 : " << reqMsg.USER_ID << endl;
+            cout << "요청 회원가입 비밀번호 : " << reqMsg.USER_PASSWORD << endl;
+
+            std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
+            try
             {
-                sqlQuery = "INSERT INTO User(login_id, password)VALUES(?,?)";
+                // 유저가 이미 존재하는지 체크
+                sqlQuery = "SELECT 1 FROM User WHERE login_id = ? LIMIT 1";
                 DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
                 DB_PSTMT->setString(1, reqMsg.USER_ID);
-                DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
-                updatedRows += DB_PSTMT->executeUpdate();
+                DB_RS = DB_PSTMT->executeQuery();
+
+                // 유저가 존재하지 않으면, 새 유저를 추가
+                if (DB_RS == nullptr || (DB_RS != nullptr && DB_RS->next() == false))
+                {
+                    sqlQuery = "INSERT INTO User(login_id, password)VALUES(?,?)";
+                    DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
+                    DB_PSTMT->setString(1, reqMsg.USER_ID);
+                    DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
+                    updatedRows += DB_PSTMT->executeUpdate();
+                }
             }
-        }
-        catch (sql::SQLException ex)
-        {
-            std::cout << "[ERR] SQL Error On C2S_REQ_SIGNUP. ErrorMsg : " << ex.what() << std::endl;
-        }
-        if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
-        if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
+            catch (sql::SQLException ex)
+            {
+                std::cout << "[ERR] SQL Error On C2S_REQ_SIGNUP. ErrorMsg : " << ex.what() << std::endl;
+            }
+            if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
+            if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
 
-        // 회원 가입이 성공했을 경우 응답 메시지 준비
-        if (updatedRows > 0)
-        {
+            // 회원 가입이 성공했을 경우 응답 메시지 준비
             MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
             respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
-            respMsg.PROCESS_FLAG = 1;  // Success
 
-            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
-        }
-        else  // 회원 가입 실패
-        {
-            MessageResPlayer respMsg;
-            respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_SIGNUP;
-            respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
-            respMsg.PROCESS_FLAG = 0;  // Failure
+            if (updatedRows > 0)
+            {
+                respMsg.PROCESS_FLAG = (int)EProcessFlag::PROCESS_OK;  // Success
+                respMsg.ERROR_CODE = ErrorCode::NONE;  // No error
+            }
+            else  // 회원 가입 실패
+            {
+                respMsg.PROCESS_FLAG = (int)EProcessFlag::PROCESS_FAIL;  // Failure
+                respMsg.ERROR_CODE = ErrorCode::SIGNUP_DUPLICATE_USERID;  // Duplicate ID error
+            }
 
             // 메시지 전송
             retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
+
+            break;
         }
-        break;
-    }
-    // 로그인 요청 처리
-    case EMessageID::C2S_REQ_LOGIN:  // Login request
-    {
-        std::cout << "[LOG] C2S_REQ_LOGIN" << std::endl;
 
-        MessageReqLogin reqMsg;
-        memcpy(&reqMsg, recvData, sizeof(MessageReqLogin));
-
-        cout << "요청 로그인 아이디 : " << reqMsg.USER_ID << endl;
-        cout << "요청 로그인 비밀번호 : " << reqMsg.USER_PASSWORD << endl;
-
-        bool loginSuccessful = false;  // 추가
-
-        std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
-        try
+        // 로그인 요청 처리
+        case EMessageID::C2S_REQ_LOGIN:  // Login request
         {
-            // 주어진 ID와 비밀번호를 가진 사용자를 찾습니다.
-            sqlQuery = "SELECT 1 FROM User WHERE login_id = ? AND password = ? LIMIT 1";
-            DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
-            DB_PSTMT->setString(1, reqMsg.USER_ID);
-            DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
-            DB_RS = DB_PSTMT->executeQuery();
+            std::cout << "[LOG] C2S_REQ_LOGIN" << std::endl;
 
-            // 사용자가 존재하고 비밀번호가 일치하면 로그인 성공
-            if (DB_RS != nullptr && DB_RS->next() == true)
+            MessageReqLogin reqMsg;
+            memcpy(&reqMsg, recvData, sizeof(MessageReqLogin));
+
+            cout << "요청 로그인 아이디 : " << reqMsg.USER_ID << endl;
+            cout << "요청 로그인 비밀번호 : " << reqMsg.USER_PASSWORD << endl;
+
+            bool loginSuccessful = false;  // 추가
+
+            std::lock_guard<std::mutex> lock(MUTEX_DB_HANDLER);
+            try
             {
-                loginSuccessful = true;  // 수정
+                // 주어진 ID와 비밀번호를 가진 사용자를 찾습니다.
+                sqlQuery = "SELECT 1 FROM User WHERE login_id = ? AND password = ? LIMIT 1";
+                DB_PSTMT = DB_CONN->prepareStatement(sqlQuery);
+                DB_PSTMT->setString(1, reqMsg.USER_ID);
+                DB_PSTMT->setString(2, reqMsg.USER_PASSWORD);
+                DB_RS = DB_PSTMT->executeQuery();
+
+                // 사용자가 존재하고 비밀번호가 일치하면 로그인 성공
+                if (DB_RS != nullptr && DB_RS->next() == true)
+                {
+                    loginSuccessful = true;  // 수정
+                }
             }
-        }
-        catch (sql::SQLException ex)
-        {
-            std::cout << "[ERR] SQL Error On C2S_REQ_LOGIN. ErrorMsg : " << ex.what() << std::endl;
-        }
-        if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
-        if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
+            catch (sql::SQLException ex)
+            {
+                std::cout << "[ERR] SQL Error On C2S_REQ_LOGIN. ErrorMsg : " << ex.what() << std::endl;
+            }
+            if (DB_RS) { DB_RS->close(); DB_RS = nullptr; }
+            if (DB_PSTMT) { DB_PSTMT->close(); DB_PSTMT = nullptr; }
 
-        // 로그인이 성공했다면 응답 메시지를 준비합니다.
-        if (loginSuccessful)  // 수정
-        {
+            // 로그인이 성공했다면 응답 메시지를 준비합니다.
             MessageResPlayer respMsg;
             respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
             respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
-            respMsg.PROCESS_FLAG = 1;  // Success
+
+            if (loginSuccessful)  // 수정
+            {
+                respMsg.PROCESS_FLAG = (int)EProcessFlag::PROCESS_OK;  // Success
+                respMsg.ERROR_CODE = ErrorCode::NONE;  // No error
+            }
+            else  // 로그인 실패
+            {
+                respMsg.PROCESS_FLAG = (int)EProcessFlag::PROCESS_FAIL;  // Failure
+                respMsg.ERROR_CODE = ErrorCode::LOGIN_FAIL;  // Login fail error
+            }
 
             retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
-        }
-        else  // 로그인 실패
-        {
-            MessageResPlayer respMsg;
-            respMsg.MsgHead.MessageID = (int)EMessageID::S2C_REQ_LOGIN;
-            respMsg.MsgHead.MessageSize = sizeof(MessageResPlayer);
-            respMsg.PROCESS_FLAG = 0;  // Failure
 
-            retval += send(clientSocket, reinterpret_cast<char*>(&respMsg), sizeof(MessageResPlayer), 0);
+            break;
         }
-        break;
-    }
     // 유효하지 않은 메시지 형식을 받았을 때
     default:
         std::cout << "[ERR] Invalid Message Format! " << std::endl;
